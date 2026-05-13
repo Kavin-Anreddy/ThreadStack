@@ -232,10 +232,10 @@ function AuthScreen({ onAuth }) {
   )
 }
 
-function ReplyThread({ postId, profile }) {
+function ReplyThread({ postId, profile, profileMap = {} }) {
   const [replies, setReplies] = useState([])
   const [body, setBody] = useState('')
-  const [replyingTo, setReplyingTo] = useState(null) 
+  const [replyingTo, setReplyingTo] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -292,7 +292,7 @@ function ReplyThread({ postId, profile }) {
       }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           {depth > 0 && <div style={{ width: 1, background: '#E0E0E0', alignSelf: 'stretch', marginRight: 6, flexShrink: 0 }} />}
-          <Avatar name={reply.display_name || reply.username} size={26} />
+          <Avatar name={reply.display_name || reply.username} size={26} url={profileMap[reply.author_id]?.avatar_url} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
               <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--mono)' }}>{reply.display_name || reply.username}</span>
@@ -459,7 +459,7 @@ function ComposeModal({ profile, onClose, onPost }) {
   )
 }
 
-function PostCard({ post, profile, onUpvote, onDelete }) {
+function PostCard({ post, profile, profileMap = {}, onUpvote, onDelete }) {
   const sub = SUBJECTS.find(s => s.id === post.subject) || SUBJECTS[0]
   const typ = POST_TYPES.find(t => t.id === post.type) || POST_TYPES[0]
   const [expanded, setExpanded] = useState(false)
@@ -474,7 +474,7 @@ function PostCard({ post, profile, onUpvote, onDelete }) {
       padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10,
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <Avatar name={post.display_name || post.username} size={30} />
+        <Avatar name={post.display_name || post.username} size={30} url={profileMap[post.author_id]?.avatar_url} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 600, fontFamily: 'var(--sans)' }}>{post.display_name || post.username}</span>
@@ -517,8 +517,7 @@ function PostCard({ post, profile, onUpvote, onDelete }) {
           background: isUpvoted ? '#F0FDF4' : '#fff', color: isUpvoted ? '#15803D' : '#888',
           fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
         }}>
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 1L9 7H1L5 1Z"/></svg>
-          {post.upvotes ?? 0}
+          {post.upvotes ?? 0} upvotes
         </button>
 
         <button onClick={() => setShowReplies(!showReplies)} style={{
@@ -527,14 +526,13 @@ function PostCard({ post, profile, onUpvote, onDelete }) {
           background: showReplies ? '#F5F5F5' : '#fff', color: '#888',
           fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
         }}>
-          <svg width="11" height="10" viewBox="0 0 11 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 1h9v6H6l-2 2V7H1V1Z"/></svg>
           {post.reply_count ?? 0} {post.reply_count === 1 ? 'reply' : 'replies'}
         </button>
       </div>
 
       {showReplies && (
         <div style={{ borderTop: '1px solid #F0F0F0', paddingTop: 4 }}>
-          <ReplyThread postId={post.id} profile={profile} />
+          <ReplyThread postId={post.id} profile={profile} profileMap={profileMap} />
         </div>
       )}
     </div>
@@ -580,6 +578,7 @@ export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [posts, setPosts] = useState([])
+  const [profileMap, setProfileMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [composing, setComposing] = useState(false)
   const [activeSubject, setActiveSubject] = useState('all')
@@ -620,7 +619,18 @@ export default function App() {
 
   const fetchPosts = async () => {
     const { data } = await supabase.from('posts').select('*').order('created_at', { ascending: false })
-    if (data) setPosts(data)
+    if (data) {
+      setPosts(data)
+      const ids = [...new Set(data.map(p => p.author_id).filter(Boolean))]
+      if (ids.length) {
+        const { data: profiles } = await supabase.from('profiles').select('id, avatar_url, display_name, username').in('id', ids)
+        if (profiles) {
+          const map = {}
+          profiles.forEach(p => { map[p.id] = p })
+          setProfileMap(map)
+        }
+      }
+    }
   }
 
   const handleUpvote = async (post) => {
@@ -744,13 +754,16 @@ export default function App() {
             </div>
           ) : (
             filtered.map(post => (
-              <PostCard key={post.id} post={post} profile={profile} onUpvote={handleUpvote} onDelete={handleDelete} />
+              <PostCard key={post.id} post={post} profile={profile} profileMap={profileMap} onUpvote={handleUpvote} onDelete={handleDelete} />
             ))
           )}
         </div>
 
         <div className="right-sidebar">
-          <ProfileSidebar profile={profile} posts={posts} onLogout={handleLogout} onUpload={(url) => setProfile(p => ({ ...p, avatar_url: url }))} />
+          <ProfileSidebar profile={profile} posts={posts} onLogout={handleLogout} onUpload={(url) => {
+            setProfile(p => ({ ...p, avatar_url: url }))
+            setProfileMap(m => ({ ...m, [profile.id]: { ...m[profile.id], avatar_url: url } }))
+          }} />
         </div>
       </div>
     </>

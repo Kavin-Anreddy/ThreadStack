@@ -2,20 +2,22 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 
 const SUBJECTS = [
-  { id: 'calc',    label: 'Calculus',    color: '#525252', bg: '#F5F5F5' },
-  { id: 'bio',     label: 'Biology',     color: '#525252', bg: '#F5F5F5' },
-  { id: 'chem',    label: 'Chemistry',   color: '#525252', bg: '#F5F5F5' },
-  { id: 'physics', label: 'Physics',     color: '#525252', bg: '#F5F5F5' },
-  { id: 'history', label: 'History',     color: '#525252', bg: '#F5F5F5' },
-  { id: 'cs',      label: 'Comp Sci',    color: '#525252', bg: '#F5F5F5' },
-  { id: 'lit',     label: 'Literature',  color: '#525252', bg: '#F5F5F5' },
-  { id: 'stats',   label: 'Statistics',  color: '#525252', bg: '#F5F5F5' },
-  { id: 'econ',    label: 'Economics',   color: '#525252', bg: '#F5F5F5' },
-  { id: 'psych',   label: 'Psychology',  color: '#525252', bg: '#F5F5F5' },
+  { id: 'calc',    label: 'Calculus',    color: '#C2410C', bg: '#FFF7ED' },
+  { id: 'bio',     label: 'Biology',     color: '#15803D', bg: '#F0FDF4' },
+  { id: 'chem',    label: 'Chemistry',   color: '#6D28D9', bg: '#F5F3FF' },
+  { id: 'physics', label: 'Physics',     color: '#1D4ED8', bg: '#EFF6FF' },
+  { id: 'history', label: 'History',     color: '#92400E', bg: '#FFFBEB' },
+  { id: 'cs',      label: 'Comp Sci',    color: '#BE185D', bg: '#FDF2F8' },
+  { id: 'lit',     label: 'Literature',  color: '#065F46', bg: '#ECFDF5' },
+  { id: 'stats',   label: 'Statistics',  color: '#4338CA', bg: '#EEF2FF' },
+  { id: 'econ',    label: 'Economics',   color: '#9A3412', bg: '#FFF7ED' },
+  { id: 'psych',   label: 'Psychology',  color: '#7C3AED', bg: '#F5F3FF' },
 ]
 const TRACKS = ['AP', 'IB', 'College', 'USABO', 'AMC/AIME', 'SAT/ACT', 'Other']
 const POST_TYPES = [
   { id: 'question',    label: 'Question',    color: '#1D4ED8', bg: '#EFF6FF' },
+  { id: 'explanation', label: 'Explanation', color: '#15803D', bg: '#F0FDF4' },
+  { id: 'mistake',     label: 'Mistake',     color: '#C2410C', bg: '#FFF7ED' },
   { id: 'resource',    label: 'Resource',    color: '#6D28D9', bg: '#F5F3FF' },
 ]
 const AVATAR_COLORS = ['#C2410C','#15803D','#6D28D9','#1D4ED8','#BE185D','#065F46','#92400E','#4338CA','#9A3412','#7C3AED']
@@ -36,15 +38,56 @@ function timeAgo(ts) {
   return `${Math.floor(s / 86400)}d ago`
 }
 
-function Avatar({ name, size = 32 }) {
+function Avatar({ name, size = 32, url, onClick }) {
   const color = hashColor(name)
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       width: size, height: size, borderRadius: '50%', flexShrink: 0,
       background: color + '15', border: `1px solid ${color}30`, color,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: size * 0.36, fontWeight: 700, fontFamily: 'var(--mono)', userSelect: 'none',
-    }}>{initials(name)}</div>
+      overflow: 'hidden', cursor: onClick ? 'pointer' : 'default',
+    }}>
+      {url
+        ? <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        : initials(name)
+      }
+    </div>
+  )
+}
+
+function AvatarUpload({ profile, onUpload }) {
+  const [uploading, setUploading] = useState(false)
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setUploading(true)
+    const ext = file.name.split('.').pop()
+    const path = `${profile.id}.${ext}`
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+    if (!uploadError) {
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+      const url = data.publicUrl + '?t=' + Date.now()
+      await supabase.from('profiles').update({ avatar_url: url }).eq('id', profile.id)
+      onUpload(url)
+    }
+    setUploading(false)
+  }
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <Avatar name={profile.display_name || profile.username} size={64} url={profile.avatar_url} />
+      <label style={{
+        position: 'absolute', bottom: 0, right: 0,
+        background: '#111', color: '#fff', borderRadius: '50%',
+        width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: uploading ? 'default' : 'pointer', fontSize: 11, border: '2px solid #fff',
+      }}>
+        {uploading ? '...' : '+'}
+        <input type="file" accept="image/*" onChange={handleFile} style={{ display: 'none' }} disabled={uploading} />
+      </label>
+    </div>
   )
 }
 
@@ -73,7 +116,6 @@ const inputStyle = {
   width: '100%', transition: 'border-color .15s',
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
 function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
@@ -190,11 +232,10 @@ function AuthScreen({ onAuth }) {
   )
 }
 
-// ─── Reply thread ─────────────────────────────────────────────────────────────
 function ReplyThread({ postId, profile }) {
   const [replies, setReplies] = useState([])
   const [body, setBody] = useState('')
-  const [replyingTo, setReplyingTo] = useState(null) // { id, username }
+  const [replyingTo, setReplyingTo] = useState(null) 
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -226,7 +267,6 @@ function ReplyThread({ postId, profile }) {
     }).select().single()
     if (!error && data) {
       setReplies(prev => [...prev, data])
-      // increment reply_count on post
       await supabase.rpc('increment_reply_count', { post_id: postId })
     }
     setBody('')
@@ -320,7 +360,6 @@ function ReplyThread({ postId, profile }) {
   )
 }
 
-// ─── Compose modal ────────────────────────────────────────────────────────────
 function ComposeModal({ profile, onClose, onPost }) {
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -420,7 +459,6 @@ function ComposeModal({ profile, onClose, onPost }) {
   )
 }
 
-// ─── Post card ────────────────────────────────────────────────────────────────
 function PostCard({ post, profile, onUpvote, onDelete }) {
   const sub = SUBJECTS.find(s => s.id === post.subject) || SUBJECTS[0]
   const typ = POST_TYPES.find(t => t.id === post.type) || POST_TYPES[0]
@@ -473,23 +511,25 @@ function PostCard({ post, profile, onUpvote, onDelete }) {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 4, borderTop: '1px solid #F5F5F5' }}>
-      <button onClick={() => onUpvote(post)} style={{
-  display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-  borderRadius: 4, border: `1px solid ${isUpvoted ? '#15803D' : '#E8E8E8'}`,
-  background: isUpvoted ? '#F0FDF4' : '#fff', color: isUpvoted ? '#15803D' : '#888',
-  fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
-}}>
-  upvote {post.upvotes ?? 0}
-</button>
+        <button onClick={() => onUpvote(post)} style={{
+          display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+          borderRadius: 4, border: `1px solid ${isUpvoted ? '#15803D' : '#E8E8E8'}`,
+          background: isUpvoted ? '#F0FDF4' : '#fff', color: isUpvoted ? '#15803D' : '#888',
+          fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
+        }}>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 1L9 7H1L5 1Z"/></svg>
+          {post.upvotes ?? 0}
+        </button>
 
-<button onClick={() => setShowReplies(!showReplies)} style={{
-  display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
-  borderRadius: 4, border: '1px solid #E8E8E8',
-  background: showReplies ? '#F5F5F5' : '#fff', color: '#888',
-  fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
-}}>
-  {post.reply_count ?? 0} {post.reply_count === 1 ? 'reply' : 'replies'}
-</button>
+        <button onClick={() => setShowReplies(!showReplies)} style={{
+          display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px',
+          borderRadius: 4, border: '1px solid #E8E8E8',
+          background: showReplies ? '#F5F5F5' : '#fff', color: '#888',
+          fontFamily: 'var(--mono)', fontSize: 12, cursor: 'pointer',
+        }}>
+          <svg width="11" height="10" viewBox="0 0 11 10" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M1 1h9v6H6l-2 2V7H1V1Z"/></svg>
+          {post.reply_count ?? 0} {post.reply_count === 1 ? 'reply' : 'replies'}
+        </button>
       </div>
 
       {showReplies && (
@@ -501,8 +541,7 @@ function PostCard({ post, profile, onUpvote, onDelete }) {
   )
 }
 
-// ─── Profile sidebar ──────────────────────────────────────────────────────────
-function ProfileSidebar({ profile, posts, onLogout }) {
+function ProfileSidebar({ profile, posts, onLogout, onUpload }) {
   const myPosts = posts.filter(p => p.author_id === profile?.id)
   const totalUpvotes = myPosts.reduce((s, p) => s + (p.upvotes ?? 0), 0)
   const joined = profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'
@@ -511,7 +550,7 @@ function ProfileSidebar({ profile, posts, onLogout }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #E8E8E8', padding: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <Avatar name={profile?.display_name || profile?.username || '?'} size={38} />
+          <AvatarUpload profile={profile} onUpload={onUpload} />
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--sans)' }}>{profile?.display_name || profile?.username}</div>
             <div style={{ fontSize: 11, color: '#AAA', fontFamily: 'var(--mono)' }}>@{profile?.username}</div>
@@ -537,7 +576,6 @@ function ProfileSidebar({ profile, posts, onLogout }) {
   )
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -626,14 +664,8 @@ export default function App() {
   return (
     <>
       <style>{`
-       @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600&family=Libre+Franklin:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap');
-
-:root {
-  --serif: 'Source Serif 4', serif;
-  --sans: 'Libre Franklin', sans-serif;
-  --mono: 'Roboto Mono', monospace;
-}
-}
+        @import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+        :root { --serif: 'Lora', serif; --sans: 'Inter', sans-serif; --mono: 'IBM Plex Mono', monospace; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: var(--sans); background: #F8F8F6; color: #111; }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: #E0E0E0; border-radius: 4px; }
@@ -650,7 +682,7 @@ export default function App() {
             style={{ flex: 1, maxWidth: 320, padding: '6px 12px', borderRadius: 6, border: '1px solid #E0E0E0', fontSize: 13, fontFamily: 'var(--sans)', outline: 'none', background: '#F8F8F8' }}
             onFocus={e => e.target.style.borderColor = '#999'} onBlur={e => e.target.style.borderColor = '#E0E0E0'} />
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Avatar name={profile?.display_name || profile?.username || '?'} size={26} />
+            <Avatar name={profile?.display_name || profile?.username || '?'} size={26} url={profile?.avatar_url} />
             <span style={{ fontSize: 13, fontFamily: 'var(--sans)', color: '#555', fontWeight: 500 }}>{profile?.display_name || profile?.username}</span>
             <button onClick={() => setComposing(true)} style={{
               background: '#111', color: '#fff', border: 'none', padding: '6px 14px',
@@ -718,7 +750,7 @@ export default function App() {
         </div>
 
         <div className="right-sidebar">
-          <ProfileSidebar profile={profile} posts={posts} onLogout={handleLogout} />
+          <ProfileSidebar profile={profile} posts={posts} onLogout={handleLogout} onUpload={(url) => setProfile(p => ({ ...p, avatar_url: url }))} />
         </div>
       </div>
     </>

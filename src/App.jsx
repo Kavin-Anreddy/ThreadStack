@@ -421,7 +421,16 @@ function ProfileSidebar({ profile, posts, onLogout, onUpload, onUpdateBio }) {
   const [bioText, setBioText] = useState(profile?.bio || '')
 
   const saveBio = async () => {
-    await supabase.from('profiles').update({ bio: bioText.trim() }).eq('id', profile.id)
+    const { error } = await supabase
+      .from('profiles')
+      .update({ bio: bioText.trim() })
+      .eq('id', profile.id)
+  
+    if (error) {
+      console.error('Bio save failed:', error.message)
+      return 
+    }
+  
     onUpdateBio(bioText.trim())
     setEditingBio(false)
   }

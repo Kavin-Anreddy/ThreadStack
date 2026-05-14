@@ -116,7 +116,6 @@ function UserProfileModal({ userId, currentProfile, posts, onClose }) {
   const userPosts = posts.filter(p => p.author_id === userId)
   const totalUpvotes = userPosts.reduce((s, p) => s + (p.upvotes ?? 0), 0)
   const joined = userProfile?.created_at ? new Date(userProfile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'
-  const isOwnProfile = currentProfile?.id === userId
 
   return (
     <div onClick={e => e.target === e.currentTarget && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16 }}>
@@ -174,8 +173,66 @@ function UserProfileModal({ userId, currentProfile, posts, onClose }) {
   )
 }
 
+function ResetPasswordModal({ onDone }) {
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  const submit = async () => {
+    setError('')
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return }
+    if (password !== confirm) { setError('Passwords do not match.'); return }
+    setLoading(true)
+    const { error: updateError } = await supabase.auth.updateUser({ password })
+    setLoading(false)
+    if (updateError) { setError(updateError.message); return }
+    setSuccess(true)
+    setTimeout(onDone, 2000)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 14, padding: '32px 28px', width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+        {success ? (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#18181B', marginBottom: 6 }}>Password updated!</div>
+            <div style={{ fontSize: 13, color: '#71717A' }}>Signing you in...</div>
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 18, fontWeight: 600, color: '#18181B', marginBottom: 6 }}>Set a new password</div>
+            <div style={{ fontSize: 13, color: '#71717A', marginBottom: 24 }}>Choose a new password for your account.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <Field label="NEW PASSWORD">
+                <input style={inputStyle} type="password" placeholder="at least 6 characters"
+                  value={password} onChange={e => setPassword(e.target.value)}
+                  onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'}
+                  onKeyDown={e => e.key === 'Enter' && submit()} />
+              </Field>
+              <Field label="CONFIRM PASSWORD">
+                <input style={inputStyle} type="password" placeholder="same password again"
+                  value={confirm} onChange={e => setConfirm(e.target.value)}
+                  onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'}
+                  onKeyDown={e => e.key === 'Enter' && submit()} />
+              </Field>
+              {error && <div style={{ fontSize: 12, color: '#DC2626', background: '#FEF2F2', padding: '9px 12px', borderRadius: 6, fontFamily: 'var(--mono)' }}>{error}</div>}
+              <button onClick={submit} disabled={loading || !password || !confirm} style={{ background: '#18181B', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 0', fontSize: 14, fontWeight: 500, cursor: loading || !password || !confirm ? 'default' : 'pointer', fontFamily: 'var(--sans)', opacity: loading || !password || !confirm ? 0.4 : 1, width: '100%' }}>
+                {loading ? 'Saving...' : 'Update password'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AuthScreen({ onAuth }) {
-  const [mode, setMode] = useState('login')
+  const [mode, setMode] = useState('login') 
+  const [resetSent, setResetSent] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
@@ -188,6 +245,14 @@ function AuthScreen({ onAuth }) {
   const submit = async () => {
     setError(''); setLoading(true)
     try {
+      if (mode === 'forgot') {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        })
+        if (resetError) { setError(resetError.message); return }
+        setResetSent(true)
+        return
+      }
       if (mode === 'signup') {
         if (!username.trim() || username.length < 3) { setError('Username must be 3+ characters.'); return }
         if (!/^[a-z0-9_]+$/.test(username)) { setError('Lowercase letters, numbers, underscores only.'); return }
@@ -208,8 +273,24 @@ function AuthScreen({ onAuth }) {
   if (confirmSent) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFA' }}>
       <div style={{ textAlign: 'center', maxWidth: 360, padding: 24 }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>📬</div>
         <div style={{ fontFamily: 'var(--serif)', fontSize: 24, marginBottom: 10, color: '#18181B' }}>Check your email</div>
         <div style={{ fontSize: 14, color: '#71717A', lineHeight: 1.7 }}>Confirmation sent to <strong style={{ color: '#18181B' }}>{email}</strong>. Click the link to activate your account.</div>
+      </div>
+    </div>
+  )
+
+  if (resetSent) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFA' }}>
+      <div style={{ textAlign: 'center', maxWidth: 360, padding: 24 }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>📩</div>
+        <div style={{ fontFamily: 'var(--serif)', fontSize: 24, marginBottom: 10, color: '#18181B' }}>Reset link sent</div>
+        <div style={{ fontSize: 14, color: '#71717A', lineHeight: 1.7, marginBottom: 24 }}>
+          Check <strong style={{ color: '#18181B' }}>{email}</strong> for a reset link. Click it and you'll be able to set a new password.
+        </div>
+        <button onClick={() => { setResetSent(false); setMode('login') }} style={{ background: 'none', border: '1.5px solid #E4E4E7', borderRadius: 8, padding: '9px 20px', color: '#18181B', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--sans)', fontWeight: 500 }}>
+          Back to sign in
+        </button>
       </div>
     </div>
   )
@@ -222,19 +303,68 @@ function AuthScreen({ onAuth }) {
           <div style={{ fontSize: 15, color: '#71717A' }}>A study forum for serious students.</div>
         </div>
         <div style={{ background: '#fff', borderRadius: 12, padding: '28px', border: '1.5px solid #E4E4E7' }}>
-          <div style={{ display: 'flex', background: '#F4F4F5', borderRadius: 8, padding: 3, marginBottom: 24 }}>
-            {[['login', 'Sign in'], ['signup', 'Create account']].map(([m, lbl]) => (
-              <button key={m} onClick={() => { setMode(m); setError('') }} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: mode === m ? '#fff' : 'transparent', color: mode === m ? '#18181B' : '#A1A1AA', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>{lbl}</button>
-            ))}
-          </div>
+
+          {mode !== 'forgot' && (
+            <div style={{ display: 'flex', background: '#F4F4F5', borderRadius: 8, padding: 3, marginBottom: 24 }}>
+              {[['login', 'Sign in'], ['signup', 'Create account']].map(([m, lbl]) => (
+                <button key={m} onClick={() => { setMode(m); setError('') }} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: mode === m ? '#fff' : 'transparent', color: mode === m ? '#18181B' : '#A1A1AA', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer', boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>{lbl}</button>
+              ))}
+            </div>
+          )}
+
+          {mode === 'forgot' && (
+            <div style={{ marginBottom: 22 }}>
+              <button onClick={() => { setMode('login'); setError('') }} style={{ background: 'none', border: 'none', color: '#A1A1AA', cursor: 'pointer', fontSize: 13, fontFamily: 'var(--sans)', padding: 0, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 4 }}>
+                ← Back to sign in
+              </button>
+              <div style={{ fontSize: 17, fontWeight: 600, color: '#18181B', marginBottom: 4 }}>Reset your password</div>
+              <div style={{ fontSize: 13, color: '#71717A' }}>Enter your email and we'll send you a reset link.</div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {mode === 'signup' && <Field label="USERNAME"><input style={inputStyle} placeholder="your_handle" value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} onKeyDown={e => e.key === 'Enter' && submit()} /></Field>}
-            {mode === 'signup' && <Field label="DISPLAY NAME"><input style={inputStyle} placeholder="How others see you" value={displayName} onChange={e => setDisplayName(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} onKeyDown={e => e.key === 'Enter' && submit()} /></Field>}
-            <Field label="EMAIL"><input style={inputStyle} type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} onKeyDown={e => e.key === 'Enter' && submit()} /></Field>
-            <Field label="PASSWORD"><input style={inputStyle} type="password" placeholder="at least 6 characters" value={password} onChange={e => setPassword(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} onKeyDown={e => e.key === 'Enter' && submit()} /></Field>
-            {mode === 'signup' && <Field label="TRACK"><select style={{ ...inputStyle, cursor: 'pointer' }} value={track} onChange={e => setTrack(e.target.value)}>{TRACKS.map(t => <option key={t} value={t}>{t}</option>)}</select></Field>}
-            {error && <div style={{ fontSize: 12, color: '#DC2626', background: '#FEF2F2', padding: '9px 12px', borderRadius: 6, fontFamily: 'var(--mono)' }}>{error}</div>}
-            <button onClick={submit} disabled={loading} style={{ background: '#18181B', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 0', fontSize: 14, fontWeight: 500, cursor: loading ? 'default' : 'pointer', fontFamily: 'var(--sans)', opacity: loading ? 0.5 : 1, width: '100%', marginTop: 4 }}>{loading ? 'Loading...' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
+            {mode === 'signup' && (
+              <Field label="USERNAME">
+                <input style={inputStyle} placeholder="your_handle" value={username} onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} onKeyDown={e => e.key === 'Enter' && submit()} />
+              </Field>
+            )}
+            {mode === 'signup' && (
+              <Field label="DISPLAY NAME">
+                <input style={inputStyle} placeholder="How others see you" value={displayName} onChange={e => setDisplayName(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} onKeyDown={e => e.key === 'Enter' && submit()} />
+              </Field>
+            )}
+
+            <Field label="EMAIL">
+              <input style={inputStyle} type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} onKeyDown={e => e.key === 'Enter' && submit()} />
+            </Field>
+
+            {mode !== 'forgot' && (
+              <Field label="PASSWORD">
+                <input style={inputStyle} type="password" placeholder="at least 6 characters" value={password} onChange={e => setPassword(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} onKeyDown={e => e.key === 'Enter' && submit()} />
+              </Field>
+            )}
+
+            {mode === 'login' && (
+              <button onClick={() => { setMode('forgot'); setError('') }} style={{ background: 'none', border: 'none', color: '#A1A1AA', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--sans)', textAlign: 'right', padding: 0, textDecoration: 'underline', alignSelf: 'flex-end', marginTop: -8 }}>
+                Forgot password?
+              </button>
+            )}
+
+            {mode === 'signup' && (
+              <Field label="TRACK">
+                <select style={{ ...inputStyle, cursor: 'pointer' }} value={track} onChange={e => setTrack(e.target.value)}>
+                  {TRACKS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Field>
+            )}
+
+            {error && (
+              <div style={{ fontSize: 12, color: '#DC2626', background: '#FEF2F2', padding: '9px 12px', borderRadius: 6, fontFamily: 'var(--mono)' }}>{error}</div>
+            )}
+
+            <button onClick={submit} disabled={loading} style={{ background: '#18181B', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 0', fontSize: 14, fontWeight: 500, cursor: loading ? 'default' : 'pointer', fontFamily: 'var(--sans)', opacity: loading ? 0.5 : 1, width: '100%', marginTop: 4 }}>
+              {loading ? 'Loading...' : mode === 'login' ? 'Sign in' : mode === 'forgot' ? 'Send reset link' : 'Create account'}
+            </button>
           </div>
         </div>
       </div>
@@ -260,8 +390,15 @@ function ReplyThread({ postId, profile, profileMap = {}, onViewUser }) {
   const submit = async () => {
     if (!body.trim() || !profile) return
     setSubmitting(true)
-    const { data, error } = await supabase.from('replies').insert({ post_id: postId, body: body.trim(), author_id: profile.id, username: profile.username, display_name: profile.display_name, parent_id: replyingTo?.id || null, parent_username: replyingTo?.username || null }).select().single()
-    if (!error && data) { setReplies(prev => [...prev, data]); await supabase.rpc('increment_reply_count', { post_id: postId }) }
+    const { data, error } = await supabase.from('replies').insert({
+      post_id: postId, body: body.trim(), author_id: profile.id,
+      username: profile.username, display_name: profile.display_name,
+      parent_id: replyingTo?.id || null, parent_username: replyingTo?.username || null,
+    }).select().single()
+    if (!error && data) {
+      setReplies(prev => [...prev, data])
+      await supabase.rpc('increment_reply_count', { post_id: postId })
+    }
     setBody(''); setReplyingTo(null); setSubmitting(false)
   }
 
@@ -279,7 +416,9 @@ function ReplyThread({ postId, profile, profileMap = {}, onViewUser }) {
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
               <span onClick={() => onViewUser(reply.author_id)} style={{ fontSize: 13, fontWeight: 600, color: '#18181B', cursor: 'pointer' }}
-                onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>{reply.display_name || reply.username}</span>
+                onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>
+                {reply.display_name || reply.username}
+              </span>
               <span style={{ fontSize: 11, color: '#A1A1AA', fontFamily: 'var(--mono)' }}>{timeAgo(reply.created_at)}</span>
               {reply.parent_username && depth === 0 && <span style={{ fontSize: 11, color: '#A1A1AA', fontFamily: 'var(--mono)' }}>replying to @{reply.parent_username}</span>}
             </div>
@@ -294,7 +433,10 @@ function ReplyThread({ postId, profile, profileMap = {}, onViewUser }) {
 
   return (
     <div>
-      {loading ? <div style={{ fontSize: 13, color: '#A1A1AA', padding: '12px 0' }}>Loading...</div> : grouped.map(r => <ReplyItem key={r.id} reply={r} />)}
+      {loading
+        ? <div style={{ fontSize: 13, color: '#A1A1AA', padding: '12px 0' }}>Loading...</div>
+        : grouped.map(r => <ReplyItem key={r.id} reply={r} />)
+      }
       <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F4F4F5' }}>
         {replyingTo && (
           <div style={{ fontSize: 12, color: '#71717A', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -305,7 +447,9 @@ function ReplyThread({ postId, profile, profileMap = {}, onViewUser }) {
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <Avatar name={profile?.display_name || profile?.username || '?'} size={28} url={profileMap[profile?.id]?.avatar_url} />
           <div style={{ flex: 1, display: 'flex', gap: 8 }}>
-            <textarea value={body} onChange={e => setBody(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit() }} placeholder="Write a reply..." rows={2}
+            <textarea value={body} onChange={e => setBody(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit() }}
+              placeholder="Write a reply... (Cmd+Enter to post)" rows={2}
               style={{ flex: 1, padding: '9px 12px', borderRadius: 8, border: '1.5px solid #E4E4E7', fontSize: 13, fontFamily: 'var(--sans)', outline: 'none', resize: 'none', lineHeight: 1.5, background: '#fff', color: '#18181B' }}
               onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} />
             <button onClick={submit} disabled={submitting || !body.trim()} style={{ background: '#18181B', color: '#fff', border: 'none', borderRadius: 8, padding: '0 16px', fontSize: 13, fontWeight: 500, cursor: body.trim() ? 'pointer' : 'default', fontFamily: 'var(--sans)', opacity: !body.trim() || submitting ? 0.35 : 1, flexShrink: 0 }}>Post</button>
@@ -329,7 +473,11 @@ function ComposeModal({ profile, onClose, onPost }) {
   const submit = async () => {
     if (!title.trim() || !body.trim()) return
     setSubmitting(true); setError('')
-    const { data, error: err } = await supabase.from('posts').insert({ title: title.trim(), body: body.trim(), subject, track, type, tags: tags.split(',').map(t => t.trim()).filter(Boolean), author_id: profile.id, username: profile.username, display_name: profile.display_name }).select().single()
+    const { data, error: err } = await supabase.from('posts').insert({
+      title: title.trim(), body: body.trim(), subject, track, type,
+      tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+      author_id: profile.id, username: profile.username, display_name: profile.display_name,
+    }).select().single()
     if (err) { setError(err.message); setSubmitting(false); return }
     onPost(data); onClose()
   }
@@ -342,17 +490,35 @@ function ComposeModal({ profile, onClose, onPost }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#A1A1AA', lineHeight: 1, padding: '0 4px' }}>×</button>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {POST_TYPES.map(t => (<button key={t.id} onClick={() => setType(t.id)} style={{ padding: '6px 14px', borderRadius: 6, border: `1.5px solid ${type === t.id ? t.color : '#E4E4E7'}`, background: type === t.id ? t.bg : '#fff', color: type === t.id ? t.color : '#71717A', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>{t.label}</button>))}
+          {POST_TYPES.map(t => (
+            <button key={t.id} onClick={() => setType(t.id)} style={{ padding: '6px 14px', borderRadius: 6, border: `1.5px solid ${type === t.id ? t.color : '#E4E4E7'}`, background: type === t.id ? t.bg : '#fff', color: type === t.id ? t.color : '#71717A', fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>{t.label}</button>
+          ))}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="SUBJECT"><select style={{ ...inputStyle, cursor: 'pointer' }} value={subject} onChange={e => setSubject(e.target.value)}>{SUBJECTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select></Field>
-          <Field label="TRACK"><select style={{ ...inputStyle, cursor: 'pointer' }} value={track} onChange={e => setTrack(e.target.value)}>{TRACKS.map(t => <option key={t} value={t}>{t}</option>)}</select></Field>
+          <Field label="SUBJECT">
+            <select style={{ ...inputStyle, cursor: 'pointer' }} value={subject} onChange={e => setSubject(e.target.value)}>
+              {SUBJECTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+            </select>
+          </Field>
+          <Field label="TRACK">
+            <select style={{ ...inputStyle, cursor: 'pointer' }} value={track} onChange={e => setTrack(e.target.value)}>
+              {TRACKS.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </Field>
         </div>
-        <Field label="TITLE"><input style={inputStyle} placeholder="What's the question or concept?" value={title} onChange={e => setTitle(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} /></Field>
-        <Field label="BODY"><textarea style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.7 }} rows={7} placeholder="Explain your reasoning, what confused you, or the key insight..." value={body} onChange={e => setBody(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} /></Field>
-        <Field label="TAGS — comma separated, optional"><input style={inputStyle} placeholder="limits, chain rule, enzyme kinetics" value={tags} onChange={e => setTags(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} /></Field>
+        <Field label="TITLE">
+          <input style={inputStyle} placeholder="What's the question or concept?" value={title} onChange={e => setTitle(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} />
+        </Field>
+        <Field label="BODY">
+          <textarea style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.7 }} rows={7} placeholder="Explain your reasoning, what confused you, or the key insight..." value={body} onChange={e => setBody(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} />
+        </Field>
+        <Field label="TAGS — comma separated, optional">
+          <input style={inputStyle} placeholder="limits, chain rule, enzyme kinetics" value={tags} onChange={e => setTags(e.target.value)} onFocus={e => e.target.style.borderColor = '#18181B'} onBlur={e => e.target.style.borderColor = '#E4E4E7'} />
+        </Field>
         {error && <div style={{ fontSize: 12, color: '#DC2626', background: '#FEF2F2', padding: '9px 12px', borderRadius: 6 }}>{error}</div>}
-        <button onClick={submit} disabled={submitting || !title.trim() || !body.trim()} style={{ background: '#18181B', color: '#fff', border: 'none', borderRadius: 8, padding: '13px 0', fontSize: 14, fontWeight: 500, width: '100%', cursor: (!title.trim() || !body.trim() || submitting) ? 'default' : 'pointer', fontFamily: 'var(--sans)', opacity: (!title.trim() || !body.trim() || submitting) ? 0.35 : 1 }}>{submitting ? 'Posting...' : 'Post'}</button>
+        <button onClick={submit} disabled={submitting || !title.trim() || !body.trim()} style={{ background: '#18181B', color: '#fff', border: 'none', borderRadius: 8, padding: '13px 0', fontSize: 14, fontWeight: 500, width: '100%', cursor: (!title.trim() || !body.trim() || submitting) ? 'default' : 'pointer', fontFamily: 'var(--sans)', opacity: (!title.trim() || !body.trim() || submitting) ? 0.35 : 1 }}>
+          {submitting ? 'Posting...' : 'Post'}
+        </button>
       </div>
     </div>
   )
@@ -376,7 +542,9 @@ function PostCard({ post, profile, profileMap = {}, onUpvote, onDelete, onViewUs
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
             <span onClick={() => onViewUser(post.author_id)} style={{ fontSize: 14, fontWeight: 600, color: '#18181B', cursor: 'pointer' }}
-              onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>{post.display_name || post.username}</span>
+              onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>
+              {post.display_name || post.username}
+            </span>
             <span style={{ fontSize: 12, color: '#A1A1AA', fontFamily: 'var(--mono)' }}>@{post.username}</span>
             <span style={{ fontSize: 12, color: '#D4D4D8' }}>·</span>
             <span style={{ fontSize: 12, color: '#A1A1AA' }}>{timeAgo(post.created_at)}</span>
@@ -401,8 +569,12 @@ function PostCard({ post, profile, profileMap = {}, onUpvote, onDelete, onViewUs
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4, borderTop: '1px solid #F4F4F5' }}>
-        <button onClick={() => onUpvote(post)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 13, fontFamily: 'var(--sans)', fontWeight: 500, cursor: 'pointer', border: `1.5px solid ${isUpvoted ? '#16A34A' : '#E4E4E7'}`, background: isUpvoted ? '#F0FDF4' : '#fff', color: isUpvoted ? '#16A34A' : '#71717A' }}>{post.upvotes ?? 0} {post.upvotes === 1 ? 'upvote' : 'upvotes'}</button>
-        <button onClick={() => setShowReplies(!showReplies)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 13, fontFamily: 'var(--sans)', fontWeight: 500, cursor: 'pointer', border: `1.5px solid ${showReplies ? '#D4D4D8' : '#E4E4E7'}`, background: showReplies ? '#F4F4F5' : '#fff', color: '#71717A' }}>{post.reply_count ?? 0} {post.reply_count === 1 ? 'reply' : 'replies'}</button>
+        <button onClick={() => onUpvote(post)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 13, fontFamily: 'var(--sans)', fontWeight: 500, cursor: 'pointer', border: `1.5px solid ${isUpvoted ? '#16A34A' : '#E4E4E7'}`, background: isUpvoted ? '#F0FDF4' : '#fff', color: isUpvoted ? '#16A34A' : '#71717A' }}>
+          {post.upvotes ?? 0} {post.upvotes === 1 ? 'upvote' : 'upvotes'}
+        </button>
+        <button onClick={() => setShowReplies(!showReplies)} style={{ padding: '5px 14px', borderRadius: 6, fontSize: 13, fontFamily: 'var(--sans)', fontWeight: 500, cursor: 'pointer', border: `1.5px solid ${showReplies ? '#D4D4D8' : '#E4E4E7'}`, background: showReplies ? '#F4F4F5' : '#fff', color: '#71717A' }}>
+          {post.reply_count ?? 0} {post.reply_count === 1 ? 'reply' : 'replies'}
+        </button>
       </div>
       {showReplies && (
         <div style={{ borderTop: '1px solid #F4F4F5', paddingTop: 8 }}>
@@ -425,12 +597,7 @@ function ProfileSidebar({ profile, posts, onLogout, onUpload, onUpdateBio }) {
       .from('profiles')
       .update({ bio: bioText.trim() })
       .eq('id', profile.id)
-  
-    if (error) {
-      console.error('Bio save failed:', error.message)
-      return 
-    }
-  
+    if (error) { console.error('Bio save failed:', error.message); return }
     onUpdateBio(bioText.trim())
     setEditingBio(false)
   }
@@ -459,7 +626,8 @@ function ProfileSidebar({ profile, posts, onLogout, onUpload, onUpdateBio }) {
               </div>
             </div>
           ) : (
-            <div onClick={() => setEditingBio(true)} style={{ cursor: 'pointer', padding: '8px 10px', borderRadius: 7, border: '1.5px dashed #E4E4E7', minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            <div onClick={() => setEditingBio(true)}
+              style={{ cursor: 'pointer', padding: '8px 10px', borderRadius: 7, border: '1.5px dashed #E4E4E7', minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               onMouseEnter={e => e.currentTarget.style.borderColor = '#A1A1AA'} onMouseLeave={e => e.currentTarget.style.borderColor = '#E4E4E7'}>
               {profile?.bio
                 ? <span style={{ fontSize: 13, color: '#52525B', lineHeight: 1.6, textAlign: 'center' }}>{profile.bio}</span>
@@ -495,6 +663,7 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState('new')
   const [viewingUserId, setViewingUserId] = useState(null)
+  const [showResetModal, setShowResetModal] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -502,10 +671,15 @@ export default function App() {
       if (session) loadProfile(session.user.id)
       else setLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session)
-      if (session) loadProfile(session.user.id)
-      else { setProfile(null); setLoading(false) }
+      if (session) {
+        loadProfile(session.user.id)
+        if (event === 'PASSWORD_RECOVERY') setShowResetModal(true)
+      } else {
+        setProfile(null)
+        setLoading(false)
+      }
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -590,6 +764,7 @@ export default function App() {
 
       {composing && profile && <ComposeModal profile={profile} onClose={() => setComposing(false)} onPost={handlePost} />}
       {viewingUserId && <UserProfileModal userId={viewingUserId} currentProfile={profile} posts={posts} onClose={() => setViewingUserId(null)} />}
+      {showResetModal && <ResetPasswordModal onDone={() => setShowResetModal(false)} />}
 
       <nav style={{ background: '#fff', borderBottom: '1.5px solid #E4E4E7', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ padding: '0 24px', display: 'flex', alignItems: 'center', gap: 20, height: 58 }}>
@@ -618,7 +793,6 @@ export default function App() {
           ))}
         </div>
 
-
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
             <div style={{ display: 'flex', background: '#F4F4F5', borderRadius: 8, padding: 3 }}>
@@ -641,7 +815,6 @@ export default function App() {
           </div>
         </div>
 
- 
         <div className="right-col" style={{ width: 240, flexShrink: 0, borderLeft: '1.5px solid #E4E4E7', background: '#fff', overflowY: 'auto', padding: '20px 16px' }}>
           <ProfileSidebar profile={profile} posts={posts} onLogout={handleLogout}
             onUpload={(url) => {
